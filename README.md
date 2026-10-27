@@ -17,8 +17,14 @@ gh workflow run release.yml --repo egoist/downbit-support -f ref=v0.1.0
 ```
 
 It builds the apps from egoist/downbit, signs and notarizes the Mac app,
-uploads them to a draft release, and publishes it once every platform has
-built. Its secrets are listed at the top of
+and uploads them to a draft release. It never publishes the draft: look at
+it, then publish it, which makes it the latest release that apps update to:
+
+```sh
+gh release edit v0.1.0 --repo egoist/downbit-support --draft=false --latest
+```
+
+Its secrets are listed at the top of
 [`release.yml`](.github/workflows/release.yml).
 
 ## FFmpeg

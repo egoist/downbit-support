@@ -1,13 +1,15 @@
 name: Release
 
 # Releases Downbit: builds it from egoist/downbit, which is private, for
-# Macs, and Windows and Linux on x64 and Arm64, and publishes the
-# installers and signed updates as this repository's release of the
-# version, whose latest apps update from (Downbit's mygo.json,
-# updates.github). The FFmpeg releases are prereleases, so this one is
-# always the latest.
+# Macs, and Windows and Linux on x64 and Arm64, and uploads the
+# installers and signed updates to a draft release of the version. It
+# never publishes it: publish the draft after looking at it, and apps
+# update to it, as the latest release (Downbit's mygo.json,
+# updates.github). The FFmpeg releases are prereleases, so it is always
+# the latest.
 #
 #   gh workflow run release.yml --repo egoist/downbit-support -f ref=v0.1.0
+#   gh release edit v0.1.0 --repo egoist/downbit-support --draft=false --latest
 #
 # The Mac app is signed with the Developer ID of mygo.json and notarized
 # with its NOTARY profile, which the job makes in a keychain of its own.
@@ -31,7 +33,7 @@ on:
 permissions:
   contents: write # the release, and the uploads to it
 
-# Every run publishes to the same releases: one at a time.
+# Every run uploads to the same releases: one at a time.
 concurrency:
   group: release
   cancel-in-progress: false
@@ -40,8 +42,6 @@ jobs:
   draft:
     name: Draft the release
     runs-on: ubuntu-24.04
-    outputs:
-      version: ${{ steps.version.outputs.version }}
     steps:
       - uses: actions/checkout@v7
         with:
@@ -147,13 +147,3 @@ jobs:
           MYGO_UPDATER_PRIVATE_KEY: ${{ secrets.MYGO_UPDATER_PRIVATE_KEY }}
         run: go tool mygo build -platform "${{ matrix.platform }}" -upload
 
-  publish:
-    name: Publish the release
-    needs: [draft, build]
-    runs-on: ubuntu-24.04
-    steps:
-      - name: Publish it, which makes it the latest that apps update to
-        env:
-          GH_TOKEN: ${{ github.token }}
-          VERSION: ${{ needs.draft.outputs.version }}
-        run: gh release edit "v$VERSION" --repo "$GITHUB_REPOSITORY" --draft=false --latest
