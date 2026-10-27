@@ -20,9 +20,12 @@ jobs:
           GH_TOKEN: ${{ github.token }}
         run: |
           tag=$(cat out/tag)
+          # Never the repository's latest release: Downbit downloads the
+          # one it names.
           if gh release view "$tag" --repo "$GITHUB_REPOSITORY" >/dev/null 2>&1; then
             echo "$tag is released already: its archives stay as they are"
+            gh release edit "$tag" --repo "$GITHUB_REPOSITORY" --latest=false
             exit 0
           fi
-          gh release create "$tag" out/ffmpeg-*.zip out/checksums.sha256 \
+          gh release create "$tag" out/ffmpeg-*.zip out/checksums.sha256 --latest=false \
             --repo "$GITHUB_REPOSITORY" --target "$GITHUB_SHA" --title "FFmpeg ${tag#ffmpeg-}" --notes-file out/notes.md

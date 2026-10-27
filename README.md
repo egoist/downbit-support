@@ -19,7 +19,8 @@ publishes ([`ffmpeg/build.sh`](ffmpeg/build.sh)).
 
 To release a newer FFmpeg, run the **FFmpeg** workflow (Actions → FFmpeg →
 Run workflow). It publishes the release of the latest upstream version,
-unless there is one, and never replaces an archive already released. Then
+unless there is one, never marked as the latest release, and never
+replaces an archive already released. Then
 point Downbit at it: the tag and the sums are in
 `internal/engine/ffmpeg.go`.
 
