@@ -1,6 +1,25 @@
 # downbit-support
 
-Files [Downbit](https://github.com/egoist/downbit) downloads as it needs them.
+Downbit's releases, and the files [Downbit](https://github.com/egoist/downbit)
+downloads as it needs them.
+
+## Downbit
+
+Each release `v<version>` holds Downbit's installers, for Macs, and Windows
+and Linux on x64 and Arm64, and the signed updates that installed apps
+update from. It is the repository's latest release, which apps check.
+
+To release Downbit, bump `version` in its `mygo.json`, tag the commit
+`v<version>`, push the tag, and run the **Release** workflow at it:
+
+```sh
+gh workflow run release.yml --repo egoist/downbit-support -f ref=v0.1.0
+```
+
+It builds the apps from egoist/downbit, signs and notarizes the Mac app,
+uploads them to a draft release, and publishes it once every platform has
+built. Its secrets are listed at the top of
+[`release.yml`](.github/workflows/release.yml).
 
 ## FFmpeg
 

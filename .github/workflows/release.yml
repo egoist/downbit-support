@@ -1,0 +1,158 @@
+name: Release
+
+# Releases Downbit: builds it from egoist/downbit, which is private, for
+# Macs, and Windows and Linux on x64 and Arm64, and publishes the
+# installers and signed updates as this repository's release of the
+# version, whose latest apps update from (Downbit's mygo.json,
+# updates.github). The FFmpeg releases are prereleases, so this one is
+# always the latest.
+#
+#   gh workflow run release.yml --repo egoist/downbit-support -f ref=v0.1.0
+#
+# The Mac app is signed with the Developer ID of mygo.json and notarized
+# with its NOTARY profile, which the job makes in a keychain of its own.
+#
+# Secrets: DOWNBIT_SOURCE_TOKEN, a token that can read egoist/downbit;
+# MYGO_UPDATER_PRIVATE_KEY, the contents of mygo-update.key, which signs
+# the updates; MACOS_CERTIFICATE, the Developer ID Application certificate
+# with its private key as a .p12 in base64, and MACOS_CERTIFICATE_PASSWORD,
+# its password; APPLE_ID and APPLE_APP_PASSWORD, an app-specific password
+# of it, with which the NOTARY profile signs in to Apple's notary service.
+
+on:
+  workflow_dispatch:
+    inputs:
+      ref:
+        description: The tag, branch or commit of egoist/downbit to release, as v0.1.0
+        required: true
+        default: main
+
+permissions:
+  contents: write # the release, and the uploads to it
+
+# Every run publishes to the same releases: one at a time.
+concurrency:
+  group: release
+  cancel-in-progress: false
+
+jobs:
+  draft:
+    name: Draft the release
+    runs-on: ubuntu-24.04
+    outputs:
+      version: ${{ steps.version.outputs.version }}
+    steps:
+      - uses: actions/checkout@v7
+        with:
+          repository: egoist/downbit
+          ref: ${{ inputs.ref }}
+          token: ${{ secrets.DOWNBIT_SOURCE_TOKEN }}
+          persist-credentials: false
+      - name: The version, which a tag must name
+        id: version
+        env:
+          REF: ${{ inputs.ref }}
+        run: |
+          version="$(jq -r .version mygo.json)"
+          case "$REF" in
+            v[0-9]*) test "$REF" = "v$version" || { echo "::error::$REF is not mygo.json's version, $version"; exit 1; } ;;
+          esac
+          echo "version=$version" >> "$GITHUB_OUTPUT"
+      - name: Create the draft release
+        # The builds upload to it; without it, each would make a draft of
+        # its own.
+        env:
+          GH_TOKEN: ${{ github.token }}
+          VERSION: ${{ steps.version.outputs.version }}
+        run: |
+          if ! gh release view "v$VERSION" --repo "$GITHUB_REPOSITORY" > /dev/null 2>&1; then
+            # The version's section of CHANGELOG.md, when there is one.
+            touch "$RUNNER_TEMP/notes.md"
+            if [ -f CHANGELOG.md ]; then
+              awk -v head="## $VERSION" '$0 == head { on = 1; next } /^## / { on = 0 } on' CHANGELOG.md > "$RUNNER_TEMP/notes.md"
+            fi
+            gh release create "v$VERSION" --repo "$GITHUB_REPOSITORY" --draft \
+              --title "Downbit $VERSION" --notes-file "$RUNNER_TEMP/notes.md"
+          fi
+
+  build:
+    needs: draft
+    name: ${{ matrix.name }}
+    runs-on: ${{ matrix.os }}
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - { name: macOS, os: macos-26, platform: "darwin/arm64,darwin/amd64" }
+          - { name: Windows, os: ubuntu-24.04, platform: "windows/amd64,windows/arm64" }
+          - { name: Linux, os: ubuntu-24.04, platform: "linux/amd64,linux/arm64" }
+    steps:
+      - uses: actions/checkout@v7
+        with:
+          repository: egoist/downbit
+          ref: ${{ inputs.ref }}
+          token: ${{ secrets.DOWNBIT_SOURCE_TOKEN }}
+          persist-credentials: false
+      - uses: actions/setup-go@v7
+        with:
+          go-version-file: go.mod
+      - name: Import the Developer ID and make the NOTARY profile
+        if: matrix.name == 'macOS'
+        env:
+          MACOS_CERTIFICATE: ${{ secrets.MACOS_CERTIFICATE }}
+          MACOS_CERTIFICATE_PASSWORD: ${{ secrets.MACOS_CERTIFICATE_PASSWORD }}
+          APPLE_ID: ${{ secrets.APPLE_ID }}
+          APPLE_APP_PASSWORD: ${{ secrets.APPLE_APP_PASSWORD }}
+        run: |
+          if [ -z "$APPLE_ID" ] || [ -z "$APPLE_APP_PASSWORD" ]; then
+            echo "::error::The APPLE_ID or APPLE_APP_PASSWORD secret is missing: the Mac app cannot be notarized"
+            exit 1
+          fi
+          keychain="$RUNNER_TEMP/signing.keychain-db"
+          password="$(openssl rand -base64 24)"
+          security create-keychain -p "$password" "$keychain"
+          security set-keychain-settings -lut 21600 "$keychain"
+          security unlock-keychain -p "$password" "$keychain"
+          printf '%s' "$MACOS_CERTIFICATE" | base64 --decode > "$RUNNER_TEMP/certificate.p12" 2> /dev/null || true
+          # A .p12 is DER, which starts with a SEQUENCE: 0x30.
+          if [ "$(head -c 1 "$RUNNER_TEMP/certificate.p12" | xxd -p)" != "30" ]; then
+            echo "::error::MACOS_CERTIFICATE is not a .p12 in base64: set it with base64 -i <file>.p12 | gh secret set MACOS_CERTIFICATE"
+            exit 1
+          fi
+          # A password piped into gh secret set may end in a newline, which
+          # is not part of it.
+          certificate_password="$(printf '%s' "$MACOS_CERTIFICATE_PASSWORD" | tr -d '\r\n')"
+          if ! security import "$RUNNER_TEMP/certificate.p12" -k "$keychain" \
+            -P "$certificate_password" -T /usr/bin/codesign; then
+            echo "::error::MACOS_CERTIFICATE_PASSWORD does not open the .p12: set it to the password chosen when exporting the certificate"
+            exit 1
+          fi
+          rm "$RUNNER_TEMP/certificate.p12"
+          security set-key-partition-list -S apple-tool:,apple: -s -k "$password" "$keychain"
+          security list-keychains -d user -s "$keychain" login.keychain
+          # The NOTARY profile, as on a Mac, in this keychain.
+          xcrun notarytool store-credentials NOTARY --keychain "$keychain" \
+            --apple-id "$APPLE_ID" --team-id GJE9R5VE87 --password "$APPLE_APP_PASSWORD"
+          # mygo.json finds the profile in the login keychain, as on a Mac;
+          # here it is in this one.
+          jq --arg keychain "$keychain" '.macos.notarize.keychain = $keychain' mygo.json > "$RUNNER_TEMP/mygo.json"
+          mv "$RUNNER_TEMP/mygo.json" mygo.json
+      - name: Install NSIS, for the Windows installer
+        if: matrix.name == 'Windows'
+        run: sudo apt-get update && sudo apt-get install -y nsis
+      - name: Build and upload
+        env:
+          GH_TOKEN: ${{ github.token }}
+          MYGO_UPDATER_PRIVATE_KEY: ${{ secrets.MYGO_UPDATER_PRIVATE_KEY }}
+        run: go tool mygo build -platform "${{ matrix.platform }}" -upload
+
+  publish:
+    name: Publish the release
+    needs: [draft, build]
+    runs-on: ubuntu-24.04
+    steps:
+      - name: Publish it, which makes it the latest that apps update to
+        env:
+          GH_TOKEN: ${{ github.token }}
+          VERSION: ${{ needs.draft.outputs.version }}
+        run: gh release edit "v$VERSION" --repo "$GITHUB_REPOSITORY" --draft=false --latest
