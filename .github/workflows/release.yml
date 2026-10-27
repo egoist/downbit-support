@@ -12,7 +12,8 @@ name: Release
 # The Mac app is signed with the Developer ID of mygo.json and notarized
 # with its NOTARY profile, which the job makes in a keychain of its own.
 #
-# Secrets: DOWNBIT_SOURCE_TOKEN, a token that can read egoist/downbit;
+# Secrets: DOWNBIT_SOURCE_SSH_KEY, the private key of a read-only deploy
+# key of egoist/downbit;
 # MYGO_UPDATER_PRIVATE_KEY, the contents of mygo-update.key, which signs
 # the updates; MACOS_CERTIFICATE, the Developer ID Application certificate
 # with its private key as a .p12 in base64, and MACOS_CERTIFICATE_PASSWORD,
@@ -46,7 +47,7 @@ jobs:
         with:
           repository: egoist/downbit
           ref: ${{ inputs.ref }}
-          token: ${{ secrets.DOWNBIT_SOURCE_TOKEN }}
+          ssh-key: ${{ secrets.DOWNBIT_SOURCE_SSH_KEY }}
           persist-credentials: false
       - name: The version, which a tag must name
         id: version
@@ -91,7 +92,7 @@ jobs:
         with:
           repository: egoist/downbit
           ref: ${{ inputs.ref }}
-          token: ${{ secrets.DOWNBIT_SOURCE_TOKEN }}
+          ssh-key: ${{ secrets.DOWNBIT_SOURCE_SSH_KEY }}
           persist-credentials: false
       - uses: actions/setup-go@v7
         with:
