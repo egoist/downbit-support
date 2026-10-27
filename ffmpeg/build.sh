@@ -51,8 +51,12 @@ notes="$work/sources.md"
 # whose sum is beside it, as .sha256.
 for p in macos/arm64:darwin-arm64 macos/amd64:darwin-amd64 linux/amd64:linux-amd64 linux/arm64:linux-arm64; do
   src=${p%%:*} name=ffmpeg-${p##*:}
-  url=$(curl -fsSLI --retry 4 -o /dev/null -w '%{url_effective}' "$riedl/$src/release/ffmpeg.zip")
-  get -o "$work/$name.src.zip" "$url"
+  # Where it redirects to, as it downloads.
+  if ! url=$(get -o "$work/$name.src.zip" -w '%{url_effective}' "$riedl/$src/release/ffmpeg.zip"); then
+    echo "$riedl/$src/release/ffmpeg.zip didn't download; the page links:" >&2
+    curl -fsSL https://ffmpeg.martin-riedl.de/ | grep -oE 'href="[^"]*"' | grep -iE 'redirect|download|zip' | sort -u | head -n 60 >&2 || true
+    exit 1
+  fi
   sum=$(get "$url.sha256" | grep -m 1 -oiE '\b[0-9a-f]{64}\b')
   check "$work/$name.src.zip" "$sum"
   repackage "$work/$name.src.zip" "$name" ffmpeg
