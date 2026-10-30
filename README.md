@@ -1,6 +1,6 @@
 # downbit-support
 
-Downbit's releases, and the files [Downbit](https://github.com/egoist/downbit)
+Downbit's releases, and the files [Downbit](https://downbit.app)
 downloads as it needs them.
 
 ## Downbit
