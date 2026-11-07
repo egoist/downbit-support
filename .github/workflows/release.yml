@@ -70,7 +70,8 @@ jobs:
             # The version's section of CHANGELOG.md, when there is one.
             touch "$RUNNER_TEMP/notes.md"
             if [ -f CHANGELOG.md ]; then
-              awk -v head="## $VERSION" '$0 == head { on = 1; next } /^## / { on = 0 } on' CHANGELOG.md > "$RUNNER_TEMP/notes.md"
+              # Its heading is "## <version>", or "## <version> - <date>".
+              awk -v head="## $VERSION" '$0 == head || index($0, head " ") == 1 { on = 1; next } /^## / { on = 0 } on' CHANGELOG.md > "$RUNNER_TEMP/notes.md"
             fi
             gh release create "v$VERSION" --repo "$GITHUB_REPOSITORY" --draft \
               --title "Downbit $VERSION" --notes-file "$RUNNER_TEMP/notes.md"
